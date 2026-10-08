@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>·</title>
+<style>
+  :root { --void:#07040f; --water:#7fd6ff; --glow:#b48cff; --text:#e6dcff; --muted:#8f84a8; }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; min-height: 100%; }
+  body { background: radial-gradient(ellipse at 50% 35%, #1d1035 0%, var(--void) 70%) fixed; color: var(--text);
+         font-family: "Pretendard","Apple SD Gothic Neo","Malgun Gothic",sans-serif;
+         display: flex; flex-direction: column; align-items: center; gap: 14px; min-height: 100vh; padding: 18px 16px 32px; }
+  nav { display: flex; flex-wrap: wrap; gap: 6px; justify-content: center; }
+  nav button { background: transparent; color: var(--muted); border: 1px solid #3a2a5c; border-radius: 999px; padding: 6px 14px; font-size: 13px; cursor: pointer; }
+  nav button.on { color: var(--text); border-color: var(--glow); background: rgba(108,63,196,.25); box-shadow: 0 0 10px rgba(180,140,255,.3); }
+  canvas { width: min(640px, 100%); aspect-ratio: 1; display: block; border-radius: 6px; touch-action: none;
+           clip-path: polygon(2% 1%,40% 0,62% 2%,98% 0,100% 35%,98% 70%,100% 99%,60% 100%,30% 98%,0 100%,1% 60%,0 25%); }
+  .row { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; align-items: center; }
+  button.act { background: #1c1430; color: var(--text); border: 1px solid #4a3a72; border-radius: 8px; padding: 9px 14px; font-size: 14px; cursor: pointer; min-width: 44px; }
+  button.act:hover { border-color: var(--glow); box-shadow: 0 0 8px rgba(180,140,255,.35); }
+  button.save { background: linear-gradient(180deg,#5b3aa8,#3b2378); border-color: #8f6be0; color: #f1eaff; }
+  .pad { display: grid; grid-template-columns: repeat(3, 46px); gap: 4px; }
+  .pad button { padding: 8px 0; }
+  .hidden { display: none !important; }
+</style>
+</head>
+<body>
+<nav id="nav" style="display:none"></nav>
+<canvas id="cv" width="640" height="640"></canvas>
+<div class="row" id="ctrl"></div>
+<div class="row"><button class="act save" onclick="save()">이미지로 저장</button></div>
+
+<script>
+/* ─────────────────────────── 공통 ─────────────────────────── */
+const cv = document.getElementById('cv'), ctx = cv.getContext('2d');
+const SZ = 640, DPR = Math.min(2, window.devicePixelRatio || 1);
+cv.width = SZ * DPR; cv.height = SZ * DPR; ctx.scale(DPR, DPR);
+const WATER = '#7fd6ff', GLOW = '#b48cff';
+
+// 배경(파편) 미리 그려 두기 — 고정 시드
+const bgCanvas = document.createElement('canvas'); bgCanvas.width = SZ; bgCanvas.height = SZ;
+(function () {
+  const g = bgCanvas.getContext('2d'); let s = 7; const rnd = () => (s = (s * 9301 + 49297) % 233280) / 233280;
+  const bg = g.createRadialGradient(SZ / 2, SZ * .4, 30, SZ / 2, SZ * .4, SZ * .8);
+  bg.addColorStop(0, '#1d1035'); bg.addColorStop(1, '#07040f'); g.fillStyle = bg; g.fillRect(0, 0, SZ, SZ);
+  for (let i = 0; i < 16; i++) {
+    g.save(); g.translate(rnd() * SZ, rnd() * SZ); g.rotate(rnd() * 6.28); const w = 10 + rnd() * 40;
+    g.fillStyle = 'rgba(43,29,72,.55)'; g.strokeStyle = 'rgba(58,42,92,.8)';
+    g.beginPath(); g.moveTo(0, 0); g.lineTo(w, w * .2); g.lineTo(w * .8, w); g.lineTo(0, w * .7); g.closePath(); g.fill(); g.stroke(); g.restore();
+  }
+  g.strokeStyle = 'rgba(61,44,99,.6)'; g.lineWidth = 1;
+  for (let i = 0; i < 6; i++) { g.beginPath(); const x = rnd() * SZ, y = rnd() * SZ; g.moveTo(x, y); g.lineTo(x + (rnd() - .5) * 120, y + (rnd() - .5) * 120); g.stroke(); }
+})();
+function drawBG() { ctx.drawImage(bgCanvas, 0, 0); }
+function rr(x, y, w, h, r) { ctx.beginPath(); ctx.moveTo(x + r, y); ctx.arcTo(x + w, y, x + w, y + h, r); ctx.arcTo(x + w, y + h, x, y + h, r); ctx.arcTo(x, y + h, x, y, r); ctx.arcTo(x, y, x + w, y, r); ctx.closePath(); }
+function stone(x, y, w, h, lit) {
+  rr(x, y, w, h, 8); const g = ctx.createLinearGradient(x, y, x + w, y + h);
+  g.addColorStop(0, '#3b3150'); g.addColorStop(.6, '#2a2238'); g.addColorStop(1, '#1d1729'); ctx.fillStyle = g; ctx.fill();
+  ctx.strokeStyle = lit ? WATER : '#4a3c66'; ctx.lineWidth = lit ? 2.5 : 1.2; ctx.stroke();
+}
+function pt(e) { const r = cv.getBoundingClientRect(); return { x: (e.clientX - r.left) / r.width * SZ, y: (e.clientY - r.top) / r.height * SZ }; }
+const ease = t => t < .5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2;
+
+/* ─────────────────────── ① 엉킨 빛줄기 ─────────────────────── */
+const Threads = (() => {
+  const E = [[0,1],[0,6],[0,9],[0,11],[0,12],[1,6],[1,12],[1,14],[2,5],[2,8],[2,10],[2,12],[3,9],[3,10],[4,5],[4,9],[4,10],[5,10],[5,12],[5,13],[6,9],[6,14],[7,8],[7,10],[8,12],[9,11],[9,13],[9,14],[12,14],[13,14]];
+  const PERM = [2,4,14,7,0,8,5,9,10,1,6,12,11,3,13];
+  const NN = PERM.length;
+  let P, drag = null, solved = false;
+  function reset() { P = []; PERM.forEach((n, k) => { const a = -Math.PI / 2 + 2 * Math.PI * k / NN; P[n] = { x: 320 + 250 * Math.cos(a), y: 320 + 250 * Math.sin(a) }; }); solved = false; }
+  function o(a, b, c) { return (b.x - a.x) * (c.y - a.y) - (b.y - a.y) * (c.x - a.x); }
+  function cross(a, b, c, d) { return o(a, b, c) * o(a, b, d) < 0 && o(c, d, a) * o(c, d, b) < 0; }
+  function crossing() {
+    const bad = new Set();
+    for (let i = 0; i < E.length; i++) for (let j = i + 1; j < E.length; j++) {
+      const [a, b] = E[i], [c, d] = E[j]; if (a === c || a === d || b === c || b === d) continue;
+      if (cross(P[a], P[b], P[c], P[d])) { bad.add(i); bad.add(j); }
+    }
+    return bad;
+  }
+  function draw(t) {
+    drawBG(); const bad = crossing(); solved = bad.size === 0;
+    E.forEach(([a, b], i) => {
+      ctx.beginPath(); ctx.moveTo(P[a].x, P[a].y); ctx.lineTo(P[b].x, P[b].y);
+      if (solved) { ctx.strokeStyle = WATER; ctx.lineWidth = 3; ctx.shadowColor = WATER; ctx.shadowBlur = 12; }
+      else if (bad.has(i)) { ctx.strokeStyle = 'rgba(200,110,170,.75)'; ctx.lineWidth = 2; ctx.shadowBlur = 0; }
+      else { ctx.strokeStyle = 'rgba(190,160,255,.85)'; ctx.lineWidth = 2.4; ctx.shadowColor = GLOW; ctx.shadowBlur = 6; }
+      ctx.stroke(); ctx.shadowBlur = 0;
+    });
+    P.forEach((p, i) => {
+      const pulse = 1 + .08 * Math.sin(t / 400 + i);
+      ctx.beginPath(); ctx.arc(p.x, p.y, 12 * pulse, 0, 7);
+      const g = ctx.createRadialGradient(p.x, p.y, 2, p.x, p.y, 16); g.addColorStop(0, solved ? '#e8fbff' : '#f1e9ff'); g.addColorStop(1, solved ? '#2a6f9a' : '#4b2d86');
+      ctx.fillStyle = g; ctx.shadowColor = solved ? WATER : GLOW; ctx.shadowBlur = drag === i ? 22 : 12; ctx.fill(); ctx.shadowBlur = 0;
+    });
+  }
+  function down(e) { const q = pt(e); let best = null, bd = 30; P.forEach((p, i) => { const d = Math.hypot(p.x - q.x, p.y - q.y); if (d < bd) { bd = d; best = i; } }); drag = best; }
+  function move(e) { if (drag === null) return; const q = pt(e); P[drag] = { x: Math.max(20, Math.min(620, q.x)), y: Math.max(20, Math.min(620, q.y)) }; }
+  function up() { drag = null; }
+  reset();
+  return { name: '빛줄기', file: 'threads', draw, down, move, up, controls: () => [] };
+})();
+
+/* ─────────────────────────── 틀 ─────────────────────────── */
+const PUZZLES = [Threads];
+let cur = 0;
+function btn(label, fn) { const b = document.createElement('button'); b.className = 'act'; b.textContent = label; b.onclick = fn; return b; }
+function select(i) {
+  if (PUZZLES[cur].leave) PUZZLES[cur].leave();
+  cur = i;
+  document.querySelectorAll('nav button').forEach((b, k) => b.classList.toggle('on', k === i));
+  const ctrl = document.getElementById('ctrl'); ctrl.innerHTML = ''; PUZZLES[i].controls().forEach(el => ctrl.appendChild(el));
+}
+PUZZLES.forEach((p, i) => { const b = document.createElement('button'); b.textContent = p.name; b.onclick = () => select(i); document.getElementById('nav').appendChild(b); });
+cv.addEventListener('pointerdown', e => { cv.setPointerCapture(e.pointerId); PUZZLES[cur].down && PUZZLES[cur].down(e); });
+cv.addEventListener('pointermove', e => PUZZLES[cur].move && PUZZLES[cur].move(e));
+cv.addEventListener('pointerup', e => PUZZLES[cur].up && PUZZLES[cur].up(e));
+document.addEventListener('keydown', e => { if (PUZZLES[cur].key && e.key.startsWith('Arrow')) e.preventDefault(); PUZZLES[cur].key && PUZZLES[cur].key(e.key); });
+function loop(t) { ctx.setTransform(DPR, 0, 0, DPR, 0, 0); PUZZLES[cur].draw(t); requestAnimationFrame(loop); }
+function save() {
+  cv.toBlob(blob => { const url = URL.createObjectURL(blob), a = document.createElement('a'); a.href = url; a.download = PUZZLES[cur].file + '.png';
+    document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(url), 2000); }, 'image/png');
+}
+select(0); requestAnimationFrame(loop);
+</script>
+</body>
+</html>
