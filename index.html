@@ -24,7 +24,6 @@
   .pad button { padding: 8px 0; }
   .hidden { display: none !important; }
 
-  /* ── 모바일 ── */
   html { -webkit-text-size-adjust: 100%; }
   body { min-height: 100dvh; -webkit-tap-highlight-color: transparent; overscroll-behavior: none; }
   button, .tile, nav button { touch-action: manipulation; -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
@@ -58,7 +57,6 @@
 
 <script>
 
-/* ── 모바일: 이미지 저장 ── */
 const COARSE = matchMedia('(pointer: coarse)').matches;
 function deliver(blob, name) {
   if (!COARSE) {
@@ -79,13 +77,11 @@ function deliver(blob, name) {
   });
   document.body.appendChild(box);
 }
-/* ─────────────────────────── 공통 ─────────────────────────── */
 const cv = document.getElementById('cv'), ctx = cv.getContext('2d');
 const SZ = 640, DPR = Math.min(2, window.devicePixelRatio || 1);
 cv.width = SZ * DPR; cv.height = SZ * DPR; ctx.scale(DPR, DPR);
 const WATER = '#7fd6ff', GLOW = '#b48cff';
 
-// 배경(파편) 미리 그려 두기 — 고정 시드
 const bgCanvas = document.createElement('canvas'); bgCanvas.width = SZ; bgCanvas.height = SZ;
 (function () {
   const g = bgCanvas.getContext('2d'); let s = 7; const rnd = () => (s = (s * 9301 + 49297) % 233280) / 233280;
@@ -109,7 +105,6 @@ function stone(x, y, w, h, lit) {
 function pt(e) { const r = cv.getBoundingClientRect(); return { x: (e.clientX - r.left) / r.width * SZ, y: (e.clientY - r.top) / r.height * SZ }; }
 const ease = t => t < .5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2;
 
-/* ─────────────────────── ① 엉킨 빛줄기 ─────────────────────── */
 const Threads = (() => {
   const E = [[0,1],[0,6],[0,9],[0,11],[0,12],[1,6],[1,12],[1,14],[2,5],[2,8],[2,10],[2,12],[3,9],[3,10],[4,5],[4,9],[4,10],[5,10],[5,12],[5,13],[6,9],[6,14],[7,8],[7,10],[8,12],[9,11],[9,13],[9,14],[12,14],[13,14]];
   const PERM = [2,4,14,7,0,8,5,9,10,1,6,12,11,3,13];
@@ -149,7 +144,6 @@ const Threads = (() => {
   return { name: '빛줄기', file: 'threads', draw, down, move, up, controls: () => [] };
 })();
 
-/* ─────────────────────────── 틀 ─────────────────────────── */
 const PUZZLES = [Threads];
 let cur = 0;
 function btn(label, fn) { const b = document.createElement('button'); b.className = 'act'; b.textContent = label; b.onclick = fn; return b; }
